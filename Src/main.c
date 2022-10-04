@@ -78,7 +78,31 @@ void KeyDect(){
 	//if(!rstate)Ding();
 	//if(!rstate)Ding();
 }
-
+void testOLED_swim(){
+	for(u8 i=0;i<64;++i){
+		u8 val=i;
+		for(u8 j=0;j<128;++j){
+			if(val>=64)val=0;
+			OLED_DrawLine(j,0,j,63,0);
+			OLED_DrawLine(j,0,j,val,1);
+			++val;
+			//OLED_Refresh();
+		}
+		OLED_Refresh();
+	}
+}
+void testOLED_line(){
+	for(u8 i=0;i<64;++i){
+			OLED_DrawPoint(64,i,1);
+			OLED_Refresh();
+		}
+		OLED_Clear();
+		for(u8 i=1;i<64;++i){
+			OLED_DrawPoint(64,63-i,1);
+			OLED_Refresh();
+		}
+		OLED_Clear();
+	}
 /* USER CODE END 0 */
 
 /**
@@ -137,18 +161,8 @@ int main(void)
 		//OLED_ShowNum(10,10,12,2,10,0);
 		
 		KeyDect();
-	
-		for(u8 i=0;i<64;++i){
-			u8 val=i;
-			for(u8 j=0;j<128;++j){
-				if(val>=64)val=0;
-				OLED_DrawLine(j,0,j,val,1);
-				++val;
-				//OLED_Refresh();
-			}
-			OLED_Refresh();
-			OLED_Clear();
-		}
+		testOLED_swim();
+		
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
