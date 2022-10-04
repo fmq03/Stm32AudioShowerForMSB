@@ -138,8 +138,17 @@ int main(void)
 		
 		KeyDect();
 	
-		OLED_ShowString(8,16,"Hello world",16,1);
-		OLED_Refresh();
+		for(u8 i=0;i<64;++i){
+			u8 val=i;
+			for(u8 j=0;j<128;++j){
+				if(val>=64)val=0;
+				OLED_DrawLine(j,0,j,val,1);
+				++val;
+				//OLED_Refresh();
+			}
+			OLED_Refresh();
+			OLED_Clear();
+		}
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
