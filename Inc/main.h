@@ -59,6 +59,8 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define LED_Pin GPIO_PIN_13
 #define LED_GPIO_Port GPIOC
+#define KEY_Pin GPIO_PIN_0
+#define KEY_GPIO_Port GPIOA
 #define LBUT_Pin GPIO_PIN_2
 #define LBUT_GPIO_Port GPIOA
 #define RBUT_Pin GPIO_PIN_3
@@ -70,7 +72,7 @@ void Error_Handler(void);
 #define OLEDSDA_Pin GPIO_PIN_7
 #define OLEDSDA_GPIO_Port GPIOB
 /* USER CODE BEGIN Private defines */
-
+void Ding(void);
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

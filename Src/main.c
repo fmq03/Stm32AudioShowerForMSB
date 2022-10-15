@@ -31,6 +31,20 @@
 #include "arm_math.h"
 #include "arm_const_structs.h"
 
+#define APP_MENU 0
+#define APP_WAVE 1
+#define APP_FFT64 2
+#define APP_FFT1024 3
+#define APP_AUDIO 4
+#define APP_DEBUG 5
+
+#define MAXFFTNUM 1024
+#define FFTNUMB 1024
+
+
+#define APP_OK 1
+#define APP_ING 0
+#define APP_WAIT 2
 //#include "arm_const_structs.h"
 
 
@@ -53,15 +67,20 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-#define FFTNUM 1024
+
 uint32_t Adc_Value=0;
-uint32_t arrValue[1024];
-float32_t FFTin[FFTNUM];
-float32_t FFTout[FFTNUM];
-float32_t FFTmag[FFTNUM];
+uint32_t arrValue[MAXFFTNUM];
+float32_t FFTin[MAXFFTNUM];
+float32_t FFTout[MAXFFTNUM];
+float32_t FFTmag[MAXFFTNUM];
+u32 ite=0,cnt=0;
 
-u16 ite=0,arrfull=0;
-
+u8 arr_status,arr_laststatus;
+u8 app_status;
+u8 menu_status=APP_WAVE;
+u8 ADC_status=APP_OK;
+u8 wave_rate=4;
+u8 fft_page=1;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -71,32 +90,54 @@ void SystemClock_Config(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
-/* USER CODE BEGIN 0 */
-void testFFT(){
-	
+/* USER CODE BEGIN 0 */ 
+void Arr_Got(){
+	ADC_status=APP_OK;
+	arr_status=APP_ING;
+}
+void App_ShowMenu(){
+	OLED_Clear();
+	OLED_ShowString(0,0,"Menu",16,1);
+	if(menu_status==APP_WAVE)OLED_ShowString(0,16,"1.Show Wave <---",12,1); else OLED_ShowString(0,16,"1.Show Wave",12,1);
+	if(menu_status==APP_FFT64)OLED_ShowString(0,28,"2.64FFT <---",12,1); else OLED_ShowString(0,28,"2.64FFT",12,1);
+	if(menu_status==APP_FFT1024)OLED_ShowString(0,40,"3.AudioFFT <---",12,1);else OLED_ShowString(0,40,"3.AudioFFT",12,1);
+	if(menu_status==APP_AUDIO)OLED_ShowString(0,52,"4.Audio <---",12,1); else OLED_ShowString(0,52,"4.Audio",12,1);
+	OLED_Refresh();
+}
+
+void App_FFT64(){
+	if(arr_status!=APP_OK)return;
 	arm_rfft_fast_instance_f32 S;
-	for(u32 i=0;i<FFTNUM;++i)FFTin[i]=arrValue[i]/512.0;
-	if(arm_rfft_fast_init_f32(&S,FFTNUM)==ARM_MATH_ARGUMENT_ERROR)Ding();
+	for(u32 i=0;i<64;++i)FFTin[i]=arrValue[4*i]/512.0;
+	Arr_Got();
+	if(arm_rfft_fast_init_f32(&S,64)==ARM_MATH_ARGUMENT_ERROR)Error_Handler();
 	arm_rfft_fast_f32(&S, FFTin, FFTout, 0);
 	FFTout[0]=FFTout[1]=0;
-	arm_cmplx_mag_f32(FFTout, FFTmag, FFTNUM/2); 
-	u16 t=0;
+	arm_cmplx_mag_f32(FFTout, FFTmag, 32); 
 	OLED_Clear();
 	for(u32 i=0;i<128;++i){
-		if(t==128){
-			t=0;
-			OLED_Refresh();
-			HAL_Delay(500);
-			OLED_Clear();
-		}
-		OLED_DrawLine(t,0,t,(u32)FFTmag[i],1);
-		++t;
+		OLED_DrawLine(i,63-(u32)FFTmag[i/4],i,63,1);
 	}
-	//OLED_DrawLine(0,63,127,63,1);
 	OLED_Refresh();
 	return;
 }
-void Ding(void){
+void App_FFT1024(u8 page){
+	if(arr_status!=APP_OK)return;
+	arm_rfft_fast_instance_f32 S;
+	for(u32 i=0;i<1024;++i)FFTin[i]=arrValue[i]/512.0;
+	Arr_Got();
+	if(arm_rfft_fast_init_f32(&S,FFTNUMB)==ARM_MATH_ARGUMENT_ERROR)Error_Handler();
+	arm_rfft_fast_f32(&S, FFTin, FFTout, 0);
+	FFTout[0]=FFTout[1]=0;
+	arm_cmplx_mag_f32(FFTout, FFTmag, FFTNUMB/2); 
+	OLED_Clear();
+	for(u32 i=0;i<128;++i){
+		OLED_DrawLine(i,63-(u32)FFTmag[i+(page-1)*128],i,63,1);
+	}
+	OLED_Refresh();
+	return;
+}
+void Ding(void){ //LED light3times
 		int t=3;
 		while(t--){
 			HAL_GPIO_WritePin(LED_GPIO_Port,LED_Pin,GPIO_PIN_RESET);
@@ -108,104 +149,54 @@ void Ding(void){
 void KeyDect(){
 	u8 lstate=HAL_GPIO_ReadPin(LBUT_GPIO_Port,LBUT_Pin);
 	u8 rstate=HAL_GPIO_ReadPin(RBUT_GPIO_Port,RBUT_Pin); //left is PA2 right is PA3
-	if(lstate){
-		HAL_GPIO_WritePin(LED_GPIO_Port,LED_Pin,GPIO_PIN_SET);
+	u8 keystate=HAL_GPIO_ReadPin(KEY_GPIO_Port,KEY_Pin);
+	if(lstate){	//l is up				
+		if(app_status==APP_MENU){menu_status=(menu_status==1)?4:menu_status-1; HAL_Delay(100);}
+		if(app_status==APP_WAVE && wave_rate>1){wave_rate/=2; HAL_Delay(100);}
+		if(app_status==APP_FFT1024 && fft_page>1){fft_page-=1; HAL_Delay(100);}
 	}
-	if(rstate){
-		HAL_GPIO_WritePin(LED_GPIO_Port,LED_Pin,GPIO_PIN_RESET);
+	if(!keystate){
+		if(app_status==APP_MENU)app_status=menu_status;else app_status=APP_MENU;
+		Ding();
 	}
-	//if(!rstate)Ding();
-	//if(!rstate)Ding();
-}
-void testOLED_swim(){
-	for(u8 i=0;i<64;++i){
-		u8 val=i;
-		for(u8 j=0;j<128;++j){
-			if(val>=64)val=0;
-			OLED_DrawLine(j,0,j,63,0);
-			OLED_DrawLine(j,0,j,val,1);
-			++val;
-			//OLED_Refresh();
-		}
-		OLED_Refresh();
+	if(rstate){//r is down
+		HAL_Delay(10);
+		if(app_status==APP_MENU && menu_status<4){menu_status=(menu_status==4)?1:menu_status+1; HAL_Delay(100);}
+		if(app_status==APP_WAVE && wave_rate<8){wave_rate*=2; HAL_Delay(100);}
+		if(app_status==APP_FFT1024 && fft_page<4){fft_page+=1; HAL_Delay(100);}
 	}
 }
-void testOLED_line(){
-	for(u8 i=0;i<64;++i){
-		OLED_DrawPoint(64,i,1);
-		OLED_Refresh();
-	}
+
+void App_ShowWave(u32 rate){
+	if(arr_status!=APP_OK)return;
 	OLED_Clear();
-	for(u8 i=1;i<64;++i){
-		OLED_DrawPoint(64,63-i,1);
-		OLED_Refresh();
-	}
-	OLED_Clear();
-}
-void testOLED_sin(){
-	static int cur=0;
-	OLED_Clear();
-	for(u8 i=0;i<127;++i){
-		u16 x=i+cur*50;
-		float32_t xal;
-		xal=x/10.0;
-		OLED_DrawPoint(i,(int)(arm_sin_f32(xal)*20.0+31.0),1);
-		
-	}
-	OLED_Refresh();
-	//
-	cur++;
-	if(cur>=127)cur=0;
-}
-void testADC(){
-	static u8 col=1;
-	static u16 lastval=30;
-	u16 adcvalue=65535;
-	//HAL_Delay(1000);
-	HAL_ADC_Start(&hadc1);
-	HAL_ADC_PollForConversion(&hadc1,15);
-	if(HAL_IS_BIT_SET(HAL_ADC_GetState(&hadc1),HAL_ADC_STATE_REG_EOC)){
-		adcvalue=HAL_ADC_GetValue(&hadc1);
-		//OLED_Clear();
-	//	OLED_ShowString(0,0,"ok",12,1);
-		for(u8 i=col;i<col+6;++i)
-		OLED_DrawLine(i,0,i,63,0);
-		
-		u16 val=(u16)(adcvalue/1023.0*30)+20;
+	for(u32 col=1;col<128;++col){
+		u32 val=64-arrValue[col*rate]/4096.0*62;
+		u32 lastval=64-arrValue[(col-1)*rate]/4096.0*62;
 		OLED_DrawPoint(col,val,1);
 		if(lastval<val)OLED_DrawLine(col-1,lastval,col,val,1); else OLED_DrawLine(col,val,col-1,lastval,1);
-
-		lastval=val;
-		
-	//	USARTPrintf("%d\n",adcvalue);
-		
-		OLED_Refresh();
-		col++;
-		if(col>=143)col=1;
-	}
-
-}
-void Print_ADC_OLED(u32 division){
-	if(division>8)return;
-	OLED_Clear();
-	for(u32 col=division;col<128*division;col+=division){
-		u32 val=64-arrValue[col]/4096.0*62;
-		u32 lastval=64-arrValue[col-division]/4096.0*62;
-		OLED_DrawPoint(col,val,1);
-		if(lastval<val)OLED_DrawLine(col-division,lastval,col,val,1); else OLED_DrawLine(col,val,col-division,lastval,1);
 	}
 	OLED_Refresh();
+	Arr_Got();
 }
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)//????
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) //ADC所产生的回调函数
 {
-	if(ite==1023){
-		arrfull=1;
-		ite=0;
-		//Print_ADC_OLED(4);
+	if(ADC_status==APP_WAIT)return;
+	if(arr_laststatus!=app_status){
+		arr_status=APP_ING;
+		arr_laststatus=app_status;
+	//	for(u16 i=0;i<MAXFFTNUM;++i)arrValue[i]=0;
+		cnt=ite=0;
 	}
- //	Ding();
 	arrValue[ite]=HAL_ADC_GetValue(&hadc1);
 	++ite;
+	if(ite==MAXFFTNUM-1){
+		arr_status=APP_OK;
+		ADC_status=APP_WAIT;
+		ite=0;
+	}
+
+	
 }
 /* USER CODE END 0 */
 
@@ -246,14 +237,7 @@ int main(void)
 	//HAL_Delay(1000);
 	Ding();
 	OLED_Init();
-	OLED_ColorTurn(0);
-	OLED_DisPlay_On();
-	OLED_ShowString(5,25,"By fmq lyz mwx",16,1);
-	OLED_Refresh();
-
-	HAL_Delay(800);
-	OLED_Clear();
-	OLED_Refresh();
+	APP_ShowWelcome();
 	HAL_TIM_Base_Start(&htim3);
 	if(HAL_ADC_Start_IT(&hadc1)!=HAL_OK)Error_Handler();
 	HAL_Delay(200);
@@ -263,27 +247,34 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 	u32 times=0;
+	//app_status=APP_FFT64;
   while (1)
   {
-		/*HAL_GPIO_WritePin(LED_GPIO_Port,LED_Pin,GPIO_PIN_SET);
-		HAL_Delay(500);		
-		HAL_GPIO_WritePin(LED_GPIO_Port,LED_Pin,GPIO_PIN_RESET);*/
-		//OLED_ShowString(0,0,"test",12,1);
-		//OLED_Refresh();
-		//Print_ADC_OLED(1);
-		//HAL_Delay(1000);
+		KeyDect();
+		switch(app_status){
+			case APP_MENU:
+				App_ShowMenu();
+				break;
+			case APP_FFT64:
+				App_FFT64();
+			//App_ShowWave(1);
+				break;
+			case APP_FFT1024:
+				App_FFT1024(fft_page);
+				break;
+			case APP_WAVE:
+				App_ShowWave(wave_rate);
+				break;
+			case APP_DEBUG:
+				if(times<100)
+				App_FFT64();
+				else App_ShowWave(1);
+				times++;
+				if(times==200)times=0;
+				break;
+		}
 		
-		if(times<100)
-		testFFT();
-		else Print_ADC_OLED(1);
 		
-		times++;
-		if(times==200)times=0;
-		//HAL_Delay(1000);
-		//HAL_Delay(500);
-		//KeyDect();
-		//testOLED_sin();
-		//HAL_ADC_Star
 		//USARTPrintf("%d\n",arrValue[0]);
     /* USER CODE END WHILE */
 
