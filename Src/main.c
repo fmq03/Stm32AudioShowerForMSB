@@ -40,12 +40,14 @@
 
 #define MAXFFTNUM 1024
 #define FFTNUMB 1024
-
+#define PHI 0.46 
+#define THRESHOLD 11
 
 #define APP_OK 1
 #define APP_ING 0
 #define APP_WAIT 2
-//#include "arm_const_structs.h"
+
+#define SQR(x) ((x)*(x))
 
 
 /* USER CODE END Includes */
@@ -69,6 +71,8 @@
 /* USER CODE BEGIN PV */
 
 uint32_t Adc_Value=0;
+u8 arrAUDOT[128];
+u8 arrAUHANG[128];
 uint32_t arrValue[MAXFFTNUM];
 float32_t FFTin[MAXFFTNUM];
 float32_t FFTout[MAXFFTNUM];
@@ -86,14 +90,30 @@ u8 fft_page=1;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-
+void Arr_Got();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
-/* USER CODE BEGIN 0 */ 
+/* USER CODE BEGIN 0 */
+float32_t Hann_Window(u16 n,u16 N){
+	if(n==N)return 0.0; else
+	return (1-PHI)-PHI*arm_cos_f32(2.0*3.14159*n/(N-1));
+}
+
+void FFT_Audio(){
+	if(arr_status!=APP_OK)return;
+	arm_rfft_fast_instance_f32 S;
+	for(u32 i=0;i<1024;++i)FFTin[i]=arrValue[i]/512.0;
+	Arr_Got();
+	if(arm_rfft_fast_init_f32(&S,FFTNUMB)==ARM_MATH_ARGUMENT_ERROR)Error_Handler();
+	arm_rfft_fast_f32(&S, FFTin, FFTout, 0);
+	arm_cmplx_mag_f32(FFTout, FFTmag, FFTNUMB/2);
+	FFTmag[0]=0;
+}
 void Arr_Got(){
 	ADC_status=APP_OK;
 	arr_status=APP_ING;
+	return;
 }
 void App_ShowMenu(){
 	OLED_Clear();
@@ -105,34 +125,59 @@ void App_ShowMenu(){
 	OLED_Refresh();
 }
 
+
 void App_FFT64(){
 	if(arr_status!=APP_OK)return;
 	arm_rfft_fast_instance_f32 S;
-	for(u32 i=0;i<64;++i)FFTin[i]=arrValue[4*i]/512.0;
+	for(u32 i=0;i<1024;++i)FFTin[i]=arrValue[i]/4096.0;
 	Arr_Got();
 	if(arm_rfft_fast_init_f32(&S,64)==ARM_MATH_ARGUMENT_ERROR)Error_Handler();
 	arm_rfft_fast_f32(&S, FFTin, FFTout, 0);
-	FFTout[0]=FFTout[1]=0;
-	arm_cmplx_mag_f32(FFTout, FFTmag, 32); 
+	//FFTout[0]=FFTout[1]=0;                                                       
+	arm_cmplx_mag_f32(FFTout, FFTmag, 32);
+	FFTmag[0]=0;
 	OLED_Clear();
 	for(u32 i=0;i<128;++i){
-		OLED_DrawLine(i,63-(u32)FFTmag[i/4],i,63,1);
+		u32 val=FFTmag[i/4]*62;
+		if(val<=10)val=0;
+		else{
+			if(FFTmag[i/4]>FFTmag[i/4-1] && FFTmag[i/4]>FFTmag[i/4+1])
+				val=sqrt(FFTmag[i/4]*FFTmag[i/4]+FFTmag[i/4-1]*FFTmag[i/4-1]+FFTmag[i/4+1]*FFTmag[i/4+1])*62;
+			else val=0;
+		}
+		if(val>63)val=62;
+		OLED_DrawLine(i,63-val,i,64,1);
 	}
 	OLED_Refresh();
 	return;
 }
 void App_FFT1024(u8 page){
-	if(arr_status!=APP_OK)return;
-	arm_rfft_fast_instance_f32 S;
-	for(u32 i=0;i<1024;++i)FFTin[i]=arrValue[i]/512.0;
-	Arr_Got();
-	if(arm_rfft_fast_init_f32(&S,FFTNUMB)==ARM_MATH_ARGUMENT_ERROR)Error_Handler();
-	arm_rfft_fast_f32(&S, FFTin, FFTout, 0);
-	FFTout[0]=FFTout[1]=0;
-	arm_cmplx_mag_f32(FFTout, FFTmag, FFTNUMB/2); 
+	FFT_Audio();
 	OLED_Clear();
 	for(u32 i=0;i<128;++i){
-		OLED_DrawLine(i,63-(u32)FFTmag[i+(page-1)*128],i,63,1);
+		OLED_DrawLine(i,63-(u32)FFTmag[i+(page-1)*128],i,64,1);
+	}
+	OLED_Refresh();
+	return;
+}
+void App_Audio(){
+	FFT_Audio();
+	OLED_Clear();
+	for(u16 i=0;i<64;++i){
+		float32_t val;
+		arm_sqrt_f32(SQR(FFTmag[i*3+2])/3+SQR(FFTmag[i*3+3])/3+SQR(FFTmag[i*3+4])/3,&val);
+		val=(u32)val;
+		if(arrAUDOT[i]<val){
+			arrAUDOT[i]=(val>61)?61:val+1;
+			arrAUHANG[i]=3;
+		}else{
+			if(arrAUHANG[i]>0)arrAUHANG[i]--;
+			else arrAUDOT[i]=(arrAUDOT[i]>3)?arrAUDOT[i]-3:1;
+			OLED_DrawLine(i*2,63-arrAUDOT[i],i*2+1,63-arrAUDOT[i],1);
+			OLED_DrawLine(i*2,63-arrAUDOT[i]+1,i*2+1,63-arrAUDOT[i]+1,1);
+		}
+		OLED_DrawLine(i*2,63-val,i*2,64,1);
+		OLED_DrawLine(i*2+1,63-val,i*2+1,64,1);
 	}
 	OLED_Refresh();
 	return;
@@ -160,8 +205,8 @@ void KeyDect(){
 		Ding();
 	}
 	if(rstate){//r is down
-		HAL_Delay(10);
-		if(app_status==APP_MENU && menu_status<4){menu_status=(menu_status==4)?1:menu_status+1; HAL_Delay(100);}
+		//HAL_Delay(10);
+		if(app_status==APP_MENU){menu_status=(menu_status==4)?1:menu_status+1; HAL_Delay(100);}
 		if(app_status==APP_WAVE && wave_rate<8){wave_rate*=2; HAL_Delay(100);}
 		if(app_status==APP_FFT1024 && fft_page<4){fft_page+=1; HAL_Delay(100);}
 	}
@@ -171,7 +216,7 @@ void App_ShowWave(u32 rate){
 	if(arr_status!=APP_OK)return;
 	OLED_Clear();
 	for(u32 col=1;col<128;++col){
-		u32 val=64-arrValue[col*rate]/4096.0*62;
+		u32 val=64-(arrValue[col*rate]/4096.0*62);
 		u32 lastval=64-arrValue[(col-1)*rate]/4096.0*62;
 		OLED_DrawPoint(col,val,1);
 		if(lastval<val)OLED_DrawLine(col-1,lastval,col,val,1); else OLED_DrawLine(col,val,col-1,lastval,1);
@@ -242,12 +287,13 @@ int main(void)
 	if(HAL_ADC_Start_IT(&hadc1)!=HAL_OK)Error_Handler();
 	HAL_Delay(200);
 	Ding();
+	
+	
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-	u32 times=0;
-	//app_status=APP_FFT64;
+	//app_status=APP_AUDIO;
   while (1)
   {
 		KeyDect();
@@ -265,12 +311,10 @@ int main(void)
 			case APP_WAVE:
 				App_ShowWave(wave_rate);
 				break;
+			case APP_AUDIO:
+				App_Audio();
 			case APP_DEBUG:
-				if(times<100)
-				App_FFT64();
-				else App_ShowWave(1);
-				times++;
-				if(times==200)times=0;
+				//App_FFT1024(fft_page);
 				break;
 		}
 		
